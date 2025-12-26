@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLC 貨代報價操作工具 - 完整顯示版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        /* 移除預設捲軸並設定平滑過渡 */
+        #resultOutput {
+            overflow-y: hidden;
+            resize: none;
+            transition: height 0.2s ease;
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen p-4 md:p-8">
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+        <div class="bg-slate-800 p-6">
+            <h1 class="text-white text-2xl font-bold">PLC 自動報價系統 v2.2 (完整預覽版)</h1>
+            <p class="text-slate-400 text-sm mt-1">結果區域現在會根據內容自動延伸，不再出現捲軸</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+            <!-- 輸入表單 -->
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">POL (起運地)</label>
+                        <select id="pol" onchange="updateViaOptions()" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border bg-white">
+                            <!-- 由 JavaScript 動態生成 -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">POD (目的地)</label>
+                        <select id="pod" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border bg-white">
+                            <option value="KEE">KEELUNG (KEE)</option>
+                            <option value="KAO">KAOHSIUNG (KAO)</option>
+                            <option value="TXG">TAICHUNG (TXG)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">VIA (中轉地)</label>
+                    <select id="via" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border bg-indigo-50">
+                        <!-- 由 JavaScript 根據 POL 連動生成 -->
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">貿易條件</label>
+                        <select id="terms" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border bg-white">
+                            <option value="DAP">DAP</option>
+                            <option value="DDU">DDU</option>
+                            <option value="DDP">DDP</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">卡車費成本 (TWD)</label>
+                        <input type="number" id="truckCost" placeholder="例如: 3600" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">DUTY & VAT</label>
+                    <input type="text" id="dutyVat" value="BY CNEE" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border">
+                </div>
+
+                <button onclick="generateQuotation()" class="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition font-bold text-lg shadow-lg">生成報價單</button>
+            </div>
+
+            <!-- 結果顯示 -->
+            <div class="flex flex-col h-full">
+                <div class="flex justify-between items-center mb-1">
+                    <label class="block text-sm font-medium text-gray-700">報價結果預覽：</label>
+                    <span id="matchStatus" class="text-xs font-semibold text-gray-500"></span>
+                </div>
+                <!-- 設定 min-height 並移除固定 height -->
+                <textarea id="resultOutput" readonly class="w-full min-h-[300px] p-4 bg-gray-50 border border-gray-200 rounded-md font-mono text-sm leading-relaxed" placeholder="結果將顯示於此..."></textarea>
+                <button onclick="copyToClipboard()" class="mt-4 bg-emerald-600 text-white py-2 px-4 rounded-md hover:bg-emerald-700 transition flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                        <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                    </svg>
+                    複製報價內容
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const rateDatabase = [
+            { pol: "USA", pod: ["KEE", "KAO"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 0, edi: 0 },
+            { pol: "CANADA", pod: ["KEE", "KAO"], via: "PUSAN", do: 115, unstuff: 16, tlsf: 2, baf: 6, emc: 2, edi: 0 },
+            { pol: "CANADA", pod: ["TXG"], via: "PUSAN", do: 115, unstuff: 16, tlsf: 2, baf: 6, emc: 2, edi: 5 },
+            { pol: "CANADA", pod: ["KEE", "KAO"], via: "SINGAPORE", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "CANADA", pod: ["TXG"], via: "SINGAPORE", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 5 },
+            { pol: "SOUTH AMERICA", pod: ["KEE", "KAO"], via: "HONG KONG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 0 },
+            { pol: "SOUTH AMERICA", pod: ["TXG"], via: "HONG KONG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 5 },
+            { pol: "SOUTH AMERICA", pod: ["KEE", "KAO"], via: "SINGAPORE", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "SOUTH AMERICA", pod: ["TXG"], via: "SINGAPORE", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 5 },
+            { pol: "EUROPE", pod: ["KEE", "KAO", "TXG"], via: "HAMBURG", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 0, edi: 0 },
+            { pol: "EUROPE", pod: ["KEE", "KAO"], via: "SINGAPORE", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "EUROPE", pod: ["TXG"], via: "SINGAPORE", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 5 },
+            { pol: "EUROPE", pod: ["KEE", "KAO"], via: "PORT KLANG", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "EUROPE", pod: ["TXG"], via: "PORT KLANG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 5 },
+            { pol: "HAMBURG", pod: ["KEE", "KAO", "TXG"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 0, edi: 0 },
+            { pol: "BARCELONA", pod: ["KEE"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 0, edi: 0 },
+            { pol: "BARCELONA", pod: ["KEE", "KAO"], via: "PORT KLANG", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "BARCELONA", pod: ["TXG"], via: "PORT KLANG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 5 },
+            { pol: "GENOVA", pod: ["KEE", "KAO"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "GENOVA", pod: ["TXG"], via: "HONG KONG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 5 },
+            { pol: "SINGAPORE", pod: ["KEE", "KAO"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "SINGAPORE", pod: ["TXG"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 5 },
+            { pol: "PORT KLANG", pod: ["KEE", "KAO"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 0, emc: 2, edi: 0 },
+            { pol: "PORT KLANG", pod: ["TXG"], via: "HONG KONG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 5 },
+            { pol: "PUSAN", pod: ["KEE", "KAO"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 6, emc: 2, edi: 0 },
+            { pol: "PUSAN", pod: ["TXG"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 2, baf: 6, emc: 2, edi: 5 },
+            { pol: "HONG KONG", pod: ["KEE", "KAO"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 0 },
+            { pol: "HONG KONG", pod: ["TXG"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 5 },
+            { pol: "CHINA", polKey: "CHINA", pod: ["KEE", "KAO", "TXG"], via: "DIRECT", do: 115, unstuff: 16, tlsf: 0, baf: 13, emc: 2, edi: 0 },
+            { pol: "GUANGZHOU", pod: ["KEE", "KAO"], via: "HONG KONG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 0 },
+            { pol: "GUANGZHOU", pod: ["TXG"], via: "HONG KONG", do: 115, unstuff: 16, tlsf: 3.5, baf: 0, emc: 2, edi: 5 }
+        ];
+
+        window.onload = function() {
+            initPolOptions();
+            updateViaOptions();
+        };
+
+        function initPolOptions() {
+            const polSelect = document.getElementById('pol');
+            const uniquePols = [...new Set(rateDatabase.map(item => item.polKey || item.pol))].sort();
+            uniquePols.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.textContent = p;
+                polSelect.appendChild(opt);
+            });
+        }
+
+        function updateViaOptions() {
+            const selectedPol = document.getElementById('pol').value;
+            const viaSelect = document.getElementById('via');
+            viaSelect.innerHTML = '';
+            const availableVias = [...new Set(
+                rateDatabase
+                    .filter(item => (item.polKey || item.pol) === selectedPol)
+                    .map(item => item.via)
+            )].sort();
+            availableVias.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                viaSelect.appendChild(opt);
+            });
+        }
+
+        // 自動調整文字框高度
+        function autoResizeTextarea() {
+            const textarea = document.getElementById('resultOutput');
+            textarea.style.height = 'auto'; // 先設為 auto 以便準確計算 scrollHeight
+            textarea.style.height = (textarea.scrollHeight + 2) + 'px'; // 根據內容設定高度
+        }
+
+        function generateQuotation() {
+            const pol = document.getElementById('pol').value;
+            const pod = document.getElementById('pod').value;
+            const via = document.getElementById('via').value;
+            const terms = document.getElementById('terms').value;
+            const truckCost = parseFloat(document.getElementById('truckCost').value) || 0;
+            const dutyVat = document.getElementById('dutyVat').value;
+
+            let rate = rateDatabase.find(r => 
+                (r.polKey === pol || r.pol === pol) && 
+                r.pod.includes(pod) && 
+                r.via === via
+            ) || rateDatabase.find(r => (r.polKey === pol || r.pol === pol) && r.via === via);
+
+            const matchStatus = document.getElementById('matchStatus');
+            if (rate) {
+                matchStatus.textContent = "✅ 資料庫費率匹配成功";
+                matchStatus.className = "text-xs font-semibold text-emerald-600";
+            } else {
+                matchStatus.textContent = "⚠️ 找不到匹配費率";
+                matchStatus.className = "text-xs font-semibold text-red-600";
+                return;
+            }
+
+            const truckFee = ((truckCost + 1500) / 30).toFixed(2);
+            const podFullName = { "KEE": "KEELUNG", "KAO": "KAOHSIUNG", "TXG": "TAICHUNG" }[pod];
+
+            let content = `This shipment from ${podFullName} to door svc all charge as follows~~~\n\n`;
+            let index = 1;
+
+            content += `      ${index++}. D/O FEE: USD ${rate.do}/BL\n`;
+            content += `      ${index++}. UNSTUFFING FEE: USD ${rate.unstuff}/CBM (Non DG shipment)\n`;
+            const customFeeStr = (terms === 'DAP') ? "DAP TERM, Customer have to declare by themselves" : "USD 100/SET";
+            content += `      ${index++}. CUSTOM FEE: ${customFeeStr}\n`;
+
+            if (rate.tlsf > 0) content += `      ${index++}. TLSF: USD ${rate.tlsf}/CBM\n`;
+            if (rate.baf > 0) content += `      ${index++}. BAF: USD ${rate.baf}/CBM\n`;
+            if (rate.emc > 0) content += `      ${index++}. EMC: USD ${rate.emc}/CBM\n`;
+            if (rate.edi > 0) content += `      ${index++}. EDI: USD ${rate.edi}/BL\n`;
+
+            content += `      ${index++}. TRUCK FEE: USD ${truckFee} (only delivery to 1st floor， and Consignee must prepare forklift for unload by themselves)\n`;
+            content += `      ${index++}. STORAGE CHARGE: USD 6/CBM/DAYS (Min USD 20 B/L)\n`;
+            content += `      ${index++}. INSPECTION FEE: AT COST\n`;
+            content += `      ${index++}. DUTY & VAT: ${dutyVat}`;
+
+            const output = document.getElementById('resultOutput');
+            output.value = content;
+            
+            // 生成內容後立即調整高度
+            autoResizeTextarea();
+        }
+
+        function copyToClipboard() {
+            const copyText = document.getElementById("resultOutput");
+            if (!copyText.value) return;
+            copyText.select();
+            document.execCommand("copy");
+            alert("報價內容已成功複製！");
+        }
+    </script>
+</body>
+</html>
